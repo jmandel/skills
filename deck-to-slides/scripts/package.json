@@ -1,0 +1,7 @@
+{
+  "name": "deck-to-slides-scripts",
+  "type": "module",
+  "dependencies": {
+    "pptxgenjs": "^4.0.1"
+  }
+}
