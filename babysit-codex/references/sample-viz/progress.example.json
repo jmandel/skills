@@ -1,0 +1,92 @@
+{
+  "session": "codex-babysat",
+  "model": "gpt-5.4 xhigh fast",
+  "plan": "Plan 19: Simplify Ticket Model",
+  "contextRemaining": "35%",
+  "currentActivity": "Fixing 8 remaining test failures: issuer-trust fixture, responder-filter AND semantics, request-validation msg, 4 UDAP-auth status codes",
+  "lastChecked": "2026-04-07T01:03",
+  "phases": [
+    {
+      "id": "phase-1", "name": "Shared Schema + Types", "status": "done",
+      "items": [
+        {"task": "Remove context.kind, ticket_type discriminator", "done": true},
+        {"task": "Make context optional for UC1/UC2", "done": true},
+        {"task": "presenter_binding discriminated union", "done": true},
+        {"task": "responder_filter (replaces jurisdictions + source_organizations)", "done": true},
+        {"task": "revocation.index (replaces rid)", "done": true},
+        {"task": "Remove supporting_artifacts", "done": true},
+        {"task": "Remove optional context fields", "done": true}
+      ]
+    },
+    {
+      "id": "phase-2", "name": "Generators + Examples", "status": "done",
+      "items": [
+        {"task": "sync_spec_snippets.ts", "done": true},
+        {"task": "generate_examples.ts updated payloads", "done": true},
+        {"task": "Regenerated JSON Schema + signed tickets", "done": true}
+      ]
+    },
+    {
+      "id": "phase-3", "name": "Server Runtime", "status": "done",
+      "items": [
+        {"task": "tickets.ts validation paths", "done": true},
+        {"task": "presenter_binding method check", "done": true},
+        {"task": "responder_filter site filtering", "done": true},
+        {"task": "Bitstring revocation registry", "done": true},
+        {"task": "sensitive_data local default", "done": true}
+      ]
+    },
+    {
+      "id": "phase-4", "name": "UI/Workbench", "status": "in-progress",
+      "items": [
+        {"task": "demo.ts ticket builder", "done": false},
+        {"task": "PermissionWorkbench builders", "done": false},
+        {"task": "Viewer/DataContract updates", "done": false}
+      ]
+    },
+    {
+      "id": "phase-5", "name": "Tests", "status": "in-progress",
+      "items": [
+        {"task": "ticket-revocation.test.ts (new bitstring format)", "done": true},
+        {"task": "modes.test.ts", "done": true},
+        {"task": "framework-auth.test.ts", "done": false},
+        {"task": "udap-token-auth.test.ts", "done": false},
+        {"task": "All tests pass", "done": false}
+      ]
+    },
+    {
+      "id": "phase-6", "name": "Docs + Final Verification", "status": "pending",
+      "items": [
+        {"task": "README + smart-config", "done": false},
+        {"task": "Spec rebuild", "done": false}
+      ]
+    }
+  ],
+  "timeline": [
+    {"time": "T+1:03", "event": "bun test: 136 tests / 15 files / 53s — 8 failures; fixing: issuer-trust fixture, responder-filter semantics, 4 UDAP status codes, 1 request-validation msg"},
+    {"time": "T+0:58", "event": "Full server test suite kicked off"},
+    {"time": "T+0:50", "event": "modes.test.ts, udap-token-auth.test.ts, demo-events.test.ts, smoke-test.ts patched"},
+    {"time": "T+0:37", "event": "COMPACTION: context 16%->66%"},
+    {"time": "T+0:04", "event": "MILESTONE: Phase 1 complete — shared/permission-ticket-schema.ts (+456 lines)"}
+  ],
+  "filesChanged": [
+    "shared/permission-ticket-schema.ts",
+    "input/fsh/PermissionTicket.fsh",
+    "scripts/sync_spec_snippets.ts",
+    "scripts/generate_examples.ts",
+    "fhir-server/src/auth/tickets.ts",
+    "fhir-server/src/auth/ticket-revocation.ts (DELETED then REWRITTEN)",
+    "fhir-server/src/auth/ticket-revocation.test.ts (new)",
+    "fhir-server/src/auth/clients.ts",
+    "fhir-server/src/auth/frameworks/udap.ts",
+    "fhir-server/src/auth/frameworks/well-known.ts",
+    "fhir-server/src/store/model.ts",
+    "fhir-server/src/app.ts",
+    "fhir-server/test/modes.test.ts (+5/-5)",
+    "fhir-server/test/udap-token-auth.test.ts (+8/-12)",
+    "fhir-server/test/udap-registration.test.ts (+2/-2)",
+    "fhir-server/test/demo-events.test.ts (+1/-2)",
+    "fhir-server/src/smoke-test.ts (+6/-7)"
+  ],
+  "notes": "Context 35%. 8 test failures identified: old sign-ticket fixture, issuer-trust fixture, responder-filter AND-semantics expectation, 1 request-validation message, 4 UDAP-auth status codes. Fixing now."
+}

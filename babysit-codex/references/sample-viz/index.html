@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Codex Mission Control</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --bg-raised: #161b22;
+    --bg-surface: #1c2128;
+    --border: #30363d;
+    --text-primary: #c9d1d9;
+    --text-secondary: #8b949e;
+    --text-muted: #484f58;
+    --done: #3fb950;
+    --done-glow: #3fb95080;
+    --in-progress: #d29922;
+    --in-progress-glow: #d2992280;
+    --pending: #21262d;
+    --pending-stroke: #30363d;
+    --accent: #58a6ff;
+    --accent-glow: #58a6ff60;
+    --red: #f85149;
+    --amber: #d29922;
+    --green: #3fb950;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: 'Inter', -apple-system, sans-serif;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  #star-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .dashboard {
+    position: relative;
+    z-index: 1;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 24px 40px;
+  }
+
+  /* TOP BAR */
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .top-bar .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .top-bar .logo-icon {
+    width: 34px; height: 34px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), #a371f7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 13px;
+    color: #fff;
+    box-shadow: 0 0 24px #58a6ff30;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .top-bar .logo-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
+  }
+
+  .top-bar .logo-text span {
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+
+  .top-bar .meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .meta-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .meta-chip .label {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-size: 9px;
+    letter-spacing: 0.6px;
+  }
+
+  .meta-chip .value {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .context-bar {
+    width: 56px;
+    height: 5px;
+    background: var(--bg);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-left: 4px;
+  }
+
+  .context-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1s ease, background 1s ease;
+  }
+
+  .pulse-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse-dot 2s ease-in-out infinite;
+    box-shadow: 0 0 8px var(--done-glow);
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.6); }
+  }
+
+  /* MAIN LAYOUT */
+  .main-layout {
+    display: grid;
+    grid-template-columns: 1fr 370px;
+    gap: 24px;
+    align-items: start;
+  }
+
+  @media (max-width: 1100px) {
+    .main-layout { grid-template-columns: 1fr; }
+  }
+
+  .center-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+
+  /* SUNBURST CONTAINER */
+  .sunburst-wrap {
+    position: relative;
+    width: 560px;
+    height: 560px;
+    max-width: 100%;
+  }
+
+  .sunburst-wrap svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  /* CENTER INFO */
+  .center-info {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+    width: 180px;
+  }
+
+  .center-pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 54px;
+    font-weight: 700;
+    line-height: 1;
+    background: linear-gradient(180deg, #f0f6fc, #8b949e);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .center-pct .pct-sign {
+    font-size: 24px;
+    font-weight: 400;
+  }
+
+  .center-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .center-activity {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 10px;
+    line-height: 1.4;
+    max-width: 170px;
+    margin-left: auto;
+    margin-right: auto;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
+
+  /* PHASE LEGEND */
+  .phase-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 14px;
+    justify-content: center;
+    max-width: 560px;
+  }
+
+  .phase-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    transition: color 0.2s;
+  }
+
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* TOOLTIP */
+  .tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: #161b22ee;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    z-index: 200;
+    max-width: 310px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    opacity: 0;
+    transition: opacity 0.15s;
+    backdrop-filter: blur(12px);
+  }
+
+  .tooltip.visible { opacity: 1; }
+
+  .tooltip .tt-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .tooltip .tt-status {
+    font-size: 9px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+
+  .tooltip .tt-status.done { background: #3fb95020; color: var(--done); }
+  .tooltip .tt-status.in-progress { background: #d2992220; color: var(--in-progress); }
+  .tooltip .tt-status.pending { background: #21262d; color: var(--text-muted); }
+
+  .tooltip .tt-tasks { list-style: none; margin-top: 6px; }
+
+  .tooltip .tt-tasks li {
+    font-size: 12px;
+    padding: 3px 0;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    line-height: 1.3;
+  }
+
+  .tooltip .tt-tasks li .ck {
+    flex-shrink: 0;
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    border: 1.5px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+    font-size: 9px;
+    color: transparent;
+  }
+
+  .tooltip .tt-tasks li.task-done .ck {
+    background: var(--done);
+    border-color: var(--done);
+    color: #fff;
+  }
+
+  .tooltip .tt-tasks li.task-done {
+    color: var(--text-muted);
+    text-decoration: line-through;
+    text-decoration-color: #484f5880;
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .card-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .card-header h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+
+  .card-header .badge {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-muted);
+  }
+
+  /* PHASE BARS */
+  .phase-bars { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+  .phase-bar-row { display: flex; align-items: center; gap: 8px; }
+
+  .pb-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    width: 110px;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pb-track {
+    flex: 1;
+    height: 5px;
+    background: var(--bg);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .pb-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1s ease;
+  }
+
+  .pb-pct {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-muted);
+    width: 32px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  /* TIMELINE */
+  .timeline-list {
+    max-height: 280px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .timeline-item {
+    padding: 10px 16px;
+    border-bottom: 1px solid #1c212840;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    animation: slide-in 0.4s ease-out;
+  }
+
+  .timeline-item:last-child { border-bottom: none; }
+
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .tl-time {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-muted);
+    min-width: 38px;
+    padding-top: 2px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .tl-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: 5px;
+    flex-shrink: 0;
+    box-shadow: 0 0 6px var(--accent-glow);
+  }
+
+  .tl-text {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+  }
+
+  /* FILES */
+  .files-list {
+    max-height: 260px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .file-item {
+    padding: 6px 16px;
+    font-size: 11.5px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-secondary);
+    border-bottom: 1px solid #1c212840;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .file-item:last-child { border-bottom: none; }
+
+  .file-icon { color: var(--accent); font-size: 10px; flex-shrink: 0; opacity: 0.7; }
+  .file-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-dir { color: var(--text-muted); }
+  .file-name { color: var(--text-secondary); }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<canvas id="star-canvas"></canvas>
+
+<div class="dashboard">
+  <div class="top-bar">
+    <div class="logo">
+      <div class="logo-icon">CX</div>
+      <div class="logo-text">codex <span>mission control</span></div>
+    </div>
+    <div class="meta" id="meta-bar"></div>
+  </div>
+
+  <div class="main-layout">
+    <div class="center-col">
+      <div class="sunburst-wrap">
+        <svg id="sunburst"></svg>
+        <div class="center-info">
+          <div class="center-pct" id="center-pct">0<span class="pct-sign">%</span></div>
+          <div class="center-label">completed</div>
+          <div class="center-activity" id="center-activity"></div>
+        </div>
+      </div>
+      <div class="phase-legend" id="phase-legend"></div>
+    </div>
+
+    <div class="sidebar">
+      <div class="card">
+        <div class="card-header"><h3>Phase Progress</h3></div>
+        <div class="phase-bars" id="phase-bars"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>Activity Feed</h3><div class="badge" id="tl-count"></div></div>
+        <div class="timeline-list" id="tl-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>Files Changed</h3><div class="badge" id="f-count"></div></div>
+        <div class="files-list" id="f-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+/* ================================================================
+   STAR FIELD (canvas behind everything)
+   ================================================================ */
+;(function() {
+  const canvas = document.getElementById('star-canvas');
+  const ctx = canvas.getContext('2d');
+  const stars = [];
+  const N = 85;
+
+  function resize() { canvas.width = innerWidth; canvas.height = innerHeight; }
+  addEventListener('resize', resize); resize();
+
+  for (let i = 0; i < N; i++) {
+    stars.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 1.1 + 0.3,
+      dx: (Math.random() - 0.5) * 0.12,
+      dy: (Math.random() - 0.5) * 0.08,
+      a: Math.random() * 0.4 + 0.08,
+      ts: Math.random() * 0.015 + 0.004,
+      tp: Math.random() * Math.PI * 2
+    });
+  }
+
+  ;(function loop(t) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const s of stars) {
+      s.x += s.dx; s.y += s.dy;
+      if (s.x < 0) s.x = canvas.width;  if (s.x > canvas.width) s.x = 0;
+      if (s.y < 0) s.y = canvas.height;  if (s.y > canvas.height) s.y = 0;
+      const a = s.a + Math.sin(t * s.ts + s.tp) * 0.15;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(190,210,230,${Math.max(0.04, a)})`;
+      ctx.fill();
+    }
+    requestAnimationFrame(loop);
+  })(0);
+})();
+
+/* ================================================================
+   CONSTANTS
+   ================================================================ */
+const W = 560, H = 560, CX = W/2, CY = H/2;
+const R0 = 105;
+const R1 = 160;
+const R2 = R1 + 7;
+const R3 = 225;
+const PARTICLE_R = R3 + 12;
+
+const STATUS_COLOR  = { done: '#3fb950', 'in-progress': '#d29922', pending: '#21262d' };
+const STATUS_BRIGHT = { done: '#56d364', 'in-progress': '#e3b341', pending: '#30363d' };
+
+let animPct = 0;
+let lastPulse = 0;
+
+/* ================================================================
+   SVG SETUP & DEFS
+   ================================================================ */
+const svg = d3.select('#sunburst')
+  .attr('viewBox', `0 0 ${W} ${H}`)
+  .attr('preserveAspectRatio', 'xMidYMid meet');
+
+const defs = svg.append('defs');
+
+function makeGlow(id, color, std, opacity) {
+  const f = defs.append('filter').attr('id', id)
+    .attr('x', '-80%').attr('y', '-80%').attr('width', '260%').attr('height', '260%');
+  f.append('feGaussianBlur').attr('in', 'SourceGraphic').attr('stdDeviation', std).attr('result', 'b');
+  f.append('feFlood').attr('flood-color', color).attr('flood-opacity', opacity).attr('result', 'c');
+  f.append('feComposite').attr('in', 'c').attr('in2', 'b').attr('operator', 'in').attr('result', 'g');
+  const m = f.append('feMerge');
+  m.append('feMergeNode').attr('in', 'g');
+  m.append('feMergeNode').attr('in', 'SourceGraphic');
+}
+
+makeGlow('gl-green',  '#3fb950', 5, 0.55);
+makeGlow('gl-amber',  '#d29922', 5, 0.45);
+makeGlow('gl-blue',   '#58a6ff', 7, 0.35);
+makeGlow('gl-green-s','#3fb950', 8, 0.7);
+
+const pf = defs.append('filter').attr('id', 'gl-pulse')
+  .attr('x', '-50%').attr('y', '-50%').attr('width', '200%').attr('height', '200%');
+pf.append('feGaussianBlur').attr('in', 'SourceGraphic').attr('stdDeviation', 3);
+
+// Groups (layered bottom to top)
+const gridG     = svg.append('g').attr('transform', `translate(${CX},${CY})`);
+const pulseG    = svg.append('g').attr('transform', `translate(${CX},${CY})`);
+const phaseG    = svg.append('g').attr('transform', `translate(${CX},${CY})`);
+const taskG     = svg.append('g').attr('transform', `translate(${CX},${CY})`);
+const particleG = svg.append('g').attr('transform', `translate(${CX},${CY})`);
+const scanG     = svg.append('g').attr('transform', `translate(${CX},${CY})`);
+
+// Static radial grid
+[R0, R1, R2, R3, PARTICLE_R].forEach(r => {
+  gridG.append('circle').attr('r', r)
+    .attr('fill', 'none').attr('stroke', '#30363d')
+    .attr('stroke-width', (r === R1 || r === R2) ? 0.3 : 0.5)
+    .attr('opacity', 0.2);
+});
+for (let a = 0; a < 360; a += 30) {
+  const rad = a * Math.PI / 180;
+  gridG.append('line')
+    .attr('x1', Math.cos(rad) * (R0 - 15)).attr('y1', Math.sin(rad) * (R0 - 15))
+    .attr('x2', Math.cos(rad) * (PARTICLE_R + 10)).attr('y2', Math.sin(rad) * (PARTICLE_R + 10))
+    .attr('stroke', '#30363d').attr('stroke-width', 0.3).attr('opacity', 0.12);
+}
+
+/* ================================================================
+   ARC GENERATORS
+   ================================================================ */
+const phaseArcGen = d3.arc().innerRadius(R0).outerRadius(R1).padAngle(0.025).cornerRadius(5);
+const taskArcGen  = d3.arc().innerRadius(R2).outerRadius(R3).padAngle(0.012).cornerRadius(4);
+
+/* ================================================================
+   LAYOUT COMPUTATION
+   ================================================================ */
+function computeLayout(data) {
+  const phases = data.phases;
+  const totalItems = phases.reduce((s, p) => s + p.items.length, 0);
+  const totalDone  = phases.reduce((s, p) => s + p.items.filter(t => t.done).length, 0);
+  const pct = totalItems ? Math.round(totalDone / totalItems * 100) : 0;
+
+  const GAP = 0.025;
+  const usable = Math.PI * 2 - phases.length * GAP;
+  let angle = -Math.PI / 2;  // start from top
+
+  const pArcs = [], tArcs = [];
+
+  phases.forEach((phase, i) => {
+    const w = phase.items.length / totalItems;
+    const span = usable * w;
+    const s = angle, e = angle + span;
+
+    pArcs.push({ startAngle: s, endAngle: e, phase, idx: i });
+
+    const tGap = 0.01;
+    const tUsable = span - phase.items.length * tGap;
+    let ta = s;
+
+    phase.items.forEach((task, j) => {
+      const tw = tUsable / phase.items.length;
+      tArcs.push({ startAngle: ta, endAngle: ta + tw, task, phase, pi: i, ti: j });
+      ta += tw + tGap;
+    });
+
+    angle = e + GAP;
+  });
+
+  return { pArcs, tArcs, pct, totalDone, totalItems };
+}
+
+/* ================================================================
+   TOOLTIP
+   ================================================================ */
+const tooltip = document.getElementById('tooltip');
+
+function showTip(evt, phase) {
+  const sl = phase.status === 'in-progress' ? 'In Progress'
+    : phase.status.charAt(0).toUpperCase() + phase.status.slice(1);
+  let h = '<div class="tt-title">' + phase.name + ' <span class="tt-status ' + phase.status + '">' + sl + '</span></div><ul class="tt-tasks">';
+  phase.items.forEach(t => {
+    const cls = t.done ? 'task-done' : '';
+    h += '<li class="' + cls + '"><span class="ck">' + (t.done ? '\u2713' : '') + '</span>' + t.task + '</li>';
+  });
+  h += '</ul>';
+  tooltip.innerHTML = h;
+  tooltip.classList.add('visible');
+  const r = tooltip.getBoundingClientRect();
+  let x = evt.clientX + 16, y = evt.clientY - 10;
+  if (x + r.width > innerWidth - 20) x = evt.clientX - r.width - 16;
+  if (y + r.height > innerHeight - 20) y = innerHeight - r.height - 20;
+  if (y < 10) y = 10;
+  tooltip.style.left = x + 'px';
+  tooltip.style.top = y + 'px';
+}
+
+function hideTip() { tooltip.classList.remove('visible'); }
+
+/* ================================================================
+   ARC INTERPOLATION
+   ================================================================ */
+function arcTween(gen) {
+  return function(d) {
+    const prev = this.__prev || { startAngle: d.startAngle, endAngle: d.startAngle };
+    const i = d3.interpolate(prev, d);
+    this.__prev = { startAngle: d.startAngle, endAngle: d.endAngle };
+    return function(t) { return gen(i(t)); };
+  };
+}
+
+/* ================================================================
+   RENDER SUNBURST
+   ================================================================ */
+function renderSunburst(data) {
+  const L = computeLayout(data);
+
+  // Phase gradient defs
+  L.pArcs.forEach(d => {
+    const id = 'pg-' + d.phase.id;
+    let g = defs.select('#' + id);
+    if (g.empty()) {
+      g = defs.append('radialGradient').attr('id', id)
+        .attr('gradientUnits', 'userSpaceOnUse').attr('cx', 0).attr('cy', 0).attr('r', R1);
+      g.append('stop').attr('offset', '30%');
+      g.append('stop').attr('offset', '100%');
+    }
+    const c = STATUS_COLOR[d.phase.status];
+    g.select('stop:nth-child(1)').transition().duration(800)
+      .attr('stop-color', d3.color(c).darker(1.8));
+    g.select('stop:nth-child(2)').transition().duration(800)
+      .attr('stop-color', c);
+  });
+
+  // Phase arcs
+  const pJ = phaseG.selectAll('.pa').data(L.pArcs, d => d.phase.id);
+
+  pJ.enter().append('path').attr('class', 'pa')
+    .attr('d', d => phaseArcGen({ startAngle: d.startAngle, endAngle: d.startAngle }))
+    .attr('fill', d => 'url(#pg-' + d.phase.id + ')')
+    .attr('stroke', 'rgba(255,255,255,0.07)').attr('stroke-width', 0.5)
+    .attr('cursor', 'pointer')
+    .on('mousemove', function(e, d) { showTip(e, d.phase); })
+    .on('mouseleave', hideTip)
+    .on('mouseenter', function(e, d) {
+      const mid = (d.startAngle + d.endAngle) / 2;
+      d3.select(this).transition().duration(180)
+        .attr('transform', 'translate(' + (Math.cos(mid) * 5) + ',' + (Math.sin(mid) * 5) + ')')
+        .attr('filter', d.phase.status === 'done' ? 'url(#gl-green-s)' : d.phase.status === 'in-progress' ? 'url(#gl-amber)' : 'none');
+    })
+    .on('mouseleave', function(e, d) {
+      hideTip();
+      d3.select(this).transition().duration(300)
+        .attr('transform', 'translate(0,0)')
+        .attr('filter', d.phase.status === 'done' ? 'url(#gl-green)' : 'none');
+    })
+  .merge(pJ)
+    .transition().duration(900).ease(d3.easeCubicInOut)
+    .attrTween('d', arcTween(phaseArcGen))
+    .attr('fill', d => 'url(#pg-' + d.phase.id + ')')
+    .attr('filter', d => d.phase.status === 'done' ? 'url(#gl-green)' : 'none');
+
+  pJ.exit().transition().duration(300).attr('opacity', 0).remove();
+
+  // Task arc gradients
+  L.tArcs.forEach(d => {
+    const id = 'tg-' + d.phase.id + '-' + d.ti;
+    let g = defs.select('#' + id);
+    if (g.empty()) {
+      g = defs.append('radialGradient').attr('id', id)
+        .attr('gradientUnits', 'userSpaceOnUse').attr('cx', 0).attr('cy', 0).attr('r', R3);
+      g.append('stop').attr('offset', '20%');
+      g.append('stop').attr('offset', '100%');
+    }
+    const base   = d.task.done ? '#3fb950' : d.phase.status === 'in-progress' ? '#d29922' : '#21262d';
+    const bright = d.task.done ? '#56d364' : d.phase.status === 'in-progress' ? '#e3b341' : '#30363d';
+    g.select('stop:nth-child(1)').transition().duration(800).attr('stop-color', d3.color(base).darker(0.7));
+    g.select('stop:nth-child(2)').transition().duration(800).attr('stop-color', bright);
+  });
+
+  // Task arcs
+  const tJ = taskG.selectAll('.ta').data(L.tArcs, d => d.phase.id + '-' + d.ti);
+
+  tJ.enter().append('path').attr('class', 'ta')
+    .attr('d', d => taskArcGen({ startAngle: d.startAngle, endAngle: d.startAngle }))
+    .attr('fill', d => 'url(#tg-' + d.phase.id + '-' + d.ti + ')')
+    .attr('stroke', 'rgba(255,255,255,0.04)').attr('stroke-width', 0.5)
+    .attr('cursor', 'pointer')
+    .on('mousemove', function(e, d) { showTip(e, d.phase); })
+    .on('mouseleave', hideTip)
+    .on('mouseenter', function(e, d) {
+      const mid = (d.startAngle + d.endAngle) / 2;
+      d3.select(this).transition().duration(180)
+        .attr('transform', 'translate(' + (Math.cos(mid) * 6) + ',' + (Math.sin(mid) * 6) + ')');
+    })
+    .on('mouseleave', function() {
+      hideTip();
+      d3.select(this).transition().duration(300).attr('transform', 'translate(0,0)');
+    })
+  .merge(tJ)
+    .transition().duration(900).ease(d3.easeCubicInOut)
+    .attrTween('d', arcTween(taskArcGen))
+    .attr('fill', d => 'url(#tg-' + d.phase.id + '-' + d.ti + ')')
+    .attr('filter', d => d.task.done ? 'url(#gl-green)' : 'none');
+
+  tJ.exit().transition().duration(300).attr('opacity', 0).remove();
+
+  // Done particles
+  const doneTasks = L.tArcs.filter(d => d.task.done);
+  const pP = particleG.selectAll('.dp').data(doneTasks, d => d.phase.id + '-' + d.ti);
+
+  pP.enter().append('circle').attr('class', 'dp')
+    .attr('r', 2.5).attr('fill', '#3fb950').attr('filter', 'url(#gl-green)').attr('opacity', 0)
+  .merge(pP).transition().duration(900).ease(d3.easeCubicInOut)
+    .attr('cx', d => { const m = (d.startAngle + d.endAngle) / 2; return Math.cos(m) * PARTICLE_R; })
+    .attr('cy', d => { const m = (d.startAngle + d.endAngle) / 2; return Math.sin(m) * PARTICLE_R; })
+    .attr('opacity', 0.85);
+
+  pP.exit().transition().duration(300).attr('opacity', 0).remove();
+
+  // Scanner sweep is handled in the animation loop (full 360°)
+
+  // Center counter tween
+  const target = L.pct;
+  d3.select('#center-pct').transition().duration(1200).ease(d3.easeCubicInOut)
+    .tween('text', function() {
+      const i = d3.interpolateRound(animPct, target);
+      return function(t) {
+        animPct = i(t);
+        this.innerHTML = animPct + '<span class="pct-sign">%</span>';
+      };
+    });
+
+  d3.select('#center-activity').text(data.currentActivity || '');
+
+  return L;
+}
+
+/* ================================================================
+   ANIMATION LOOP (scanner + pulse rings)
+   ================================================================ */
+;(function loop(t) {
+  // Full-circle scanner sweep
+  const scanAngle = (t * 0.0004) * Math.PI * 2;  // ~15s per revolution
+  if (scanG.select('.scan-line').empty()) {
+    scanG.append('line').attr('class','scan-line')
+      .attr('stroke','#58a6ff').attr('stroke-width',1).attr('stroke-linecap','round').attr('opacity',0.2);
+    scanG.append('path').attr('class','scan-trail')
+      .attr('fill','#58a6ff').attr('opacity',0.03);
+  }
+  scanG.select('.scan-line')
+    .attr('x1',Math.cos(scanAngle)*R0).attr('y1',Math.sin(scanAngle)*R0)
+    .attr('x2',Math.cos(scanAngle)*(R3+6)).attr('y2',Math.sin(scanAngle)*(R3+6));
+  const trailArc = d3.arc().innerRadius(R0).outerRadius(R3+4)
+    .startAngle(scanAngle - 0.3).endAngle(scanAngle);
+  scanG.select('.scan-trail').attr('d',trailArc());
+
+  if (t - lastPulse > 3500) {
+    lastPulse = t;
+    pulseG.append('circle')
+      .attr('r', 25).attr('fill', 'none')
+      .attr('stroke', '#58a6ff').attr('stroke-width', 1)
+      .attr('opacity', 0.25).attr('filter', 'url(#gl-pulse)')
+      .transition().duration(2800).ease(d3.easeQuadOut)
+      .attr('r', R3 + 45).attr('opacity', 0).attr('stroke-width', 0.2)
+      .remove();
+  }
+
+  requestAnimationFrame(loop);
+})(0);
+
+/* ================================================================
+   SIDEBAR RENDERERS
+   ================================================================ */
+function renderMeta(d) {
+  const ctxPct = parseInt(d.contextRemaining) || 0;
+  const ctxCol = ctxPct < 20 ? 'var(--red)' : ctxPct < 50 ? 'var(--amber)' : 'var(--green)';
+  document.getElementById('meta-bar').innerHTML =
+    '<div class="meta-chip"><span class="label">Plan</span><span class="value">' + (d.plan || '') + '</span></div>' +
+    '<div class="meta-chip"><span class="label">Model</span><span class="value">' + (d.model || '') + '</span></div>' +
+    '<div class="meta-chip"><span class="label">Ctx</span><span class="value" style="color:' + ctxCol + '">' + (d.contextRemaining || '?') + '</span>' +
+    '<div class="context-bar"><div class="context-bar-fill" style="width:' + ctxPct + '%;background:' + ctxCol + '"></div></div></div>' +
+    '<div class="meta-chip"><div class="pulse-dot"></div><span class="value">' + (d.lastChecked || '') + '</span></div>';
+}
+
+function renderPhaseBars(d) {
+  document.getElementById('phase-bars').innerHTML = d.phases.map(function(p) {
+    var done = p.items.filter(function(t) { return t.done; }).length;
+    var total = p.items.length;
+    var pct = total ? Math.round(done / total * 100) : 0;
+    var c = STATUS_COLOR[p.status] || '#30363d';
+    var glow = p.status === 'done' ? 'box-shadow:0 0 8px ' + c : '';
+    return '<div class="phase-bar-row">' +
+      '<div class="pb-label" title="' + p.name + '">' + p.name + '</div>' +
+      '<div class="pb-track"><div class="pb-fill" style="width:' + pct + '%;background:' + c + ';' + glow + '"></div></div>' +
+      '<div class="pb-pct" style="color:' + c + '">' + pct + '%</div></div>';
+  }).join('');
+}
+
+function renderLegend(d) {
+  document.getElementById('phase-legend').innerHTML = d.phases.map(function(p) {
+    var c = STATUS_COLOR[p.status];
+    var glow = p.status === 'done' ? 'box-shadow:0 0 6px ' + c : '';
+    return '<div class="phase-legend-item"><div class="legend-dot" style="background:' + c + ';' + glow + '"></div>' + p.name + '</div>';
+  }).join('');
+}
+
+function renderTimeline(d) {
+  var items = d.timeline || [];
+  document.getElementById('tl-count').textContent = items.length + ' events';
+  document.getElementById('tl-list').innerHTML = items.map(function(e) {
+    return '<div class="timeline-item"><div class="tl-time">' + e.time + '</div><div class="tl-dot"></div><div class="tl-text">' + e.event + '</div></div>';
+  }).join('');
+}
+
+function renderFiles(d) {
+  var files = d.filesChanged || [];
+  document.getElementById('f-count').textContent = files.length + ' files';
+  document.getElementById('f-list').innerHTML = files.map(function(f) {
+    var parts = f.split('/');
+    var name = parts.pop();
+    var dir = parts.join('/');
+    return '<div class="file-item"><span class="file-icon">\u25CB</span><span class="file-path">' +
+      (dir ? '<span class="file-dir">' + dir + '/</span>' : '') +
+      '<span class="file-name">' + name + '</span></span></div>';
+  }).join('');
+}
+
+/* ================================================================
+   FETCH + UPDATE LOOP
+   ================================================================ */
+async function fetchData() {
+  try {
+    var r = await fetch('/codex-progress.json?t=' + Date.now());
+    if (!r.ok) throw 0;
+    return r.json();
+  } catch(e) { console.warn('fetch err', e); return null; }
+}
+
+function update(d) {
+  if (!d) return;
+  renderMeta(d);
+  renderSunburst(d);
+  renderPhaseBars(d);
+  renderLegend(d);
+  renderTimeline(d);
+  renderFiles(d);
+}
+
+fetchData().then(function(d) {
+  update(d);
+  setInterval(async function() { var d = await fetchData(); if (d) update(d); }, 5000);
+});
+</script>
+</body>
+</html>

@@ -28,6 +28,29 @@ The babysitting workflow alternates between monitoring and intervening:
 3. **Intervene** only when needed — type corrections, cancel and redirect, or queue a message
 4. **Do useful work in between** — research, prepare reference files, or work on other tasks the user assigned
 
+## Detecting Codex Idle State
+
+A helper script at `~/.claude/skills/babysit-codex/scripts/wait-codex.sh` polls tmux until Codex finishes working or a timeout is reached, then returns all new content:
+
+```bash
+# Wait up to 30s (default), polling every 3s (default), return new output
+NEW_OUTPUT=$(~/.claude/skills/babysit-codex/scripts/wait-codex.sh codex-babysat 30 3)
+# Exit 0 = Codex went idle, Exit 1 = timeout (still working)
+# Either way, stdout contains all new tmux content since the script started
+```
+
+Both you (opus, the babysitter) and sonnet subagents can use this script. The semantics are: "wait at most N seconds, but poll frequently and return as soon as Codex finishes or my timeout is reached." The return value is the delta — any new content since polling began.
+
+**Detection logic:** Codex shows `›` at the start of a line when waiting for input. When actively working, it shows `Working (Ns • esc to interrupt)` on the status line. The script checks for `›` without `esc to interrupt`.
+
+## Division of Responsibilities with Subagents
+
+When using subagents for monitoring:
+
+- **Sonnet subagents** can poll tmux, read output, and update the progress dashboard JSON. They should NOT send instructions to Codex — they lack the context and judgment to guide implementation effectively.
+- **The babysitting agent (you, opus)** is the only one who talks to Codex. You read the sonnet's progress updates, assess the situation, and decide what to tell Codex.
+- **One agent, one loop.** Don't run multiple overlapping scripts/agents that all poll tmux. Have one sonnet monitor that does: poll → assess → update JSON. Have one babysitter (you) that reads the JSON and talks to Codex when needed.
+
 ## Reading Codex Output
 
 Capture output from the tmux pane. The key challenge is reading **all new output** between checks, not just the last few lines.
@@ -242,25 +265,25 @@ If the user wants visibility into Codex's progress, build a live dashboard. The 
 
 ### Implementation
 
-1. Write a JSON state file (e.g., `/tmp/codex-progress.json`) with phases, items, timeline, and metadata
-2. Write a static HTML file alongside it that fetches the JSON via relative path and renders SVG
-3. Serve with a minimal Bun server:
+A complete reference dashboard ships with this skill at `references/sample-viz/`. Use it directly — no need to write your own from scratch:
 
-```typescript
-// /tmp/codex-viz-server.ts
-const server = Bun.serve({
-  port: 8199,
-  fetch(req) {
-    const url = new URL(req.url);
-    const path = url.pathname === "/" ? "/codex-dashboard.html" : url.pathname;
-    const file = Bun.file(`/tmp${path}`);
-    return new Response(file);
-  },
-});
-console.log(`Dashboard: http://localhost:${server.port}`);
+```bash
+# Start the dashboard (defaults to /tmp/codex-progress.json on port 8199)
+bun run ~/.claude/skills/babysit-codex/references/sample-viz/server.ts &
+
+# Or with a custom progress file path:
+bun run ~/.claude/skills/babysit-codex/references/sample-viz/server.ts /tmp/my-run/progress.json &
 ```
 
-Run with `bun run /tmp/codex-viz-server.ts &` — this is simpler and more portable than launching Chromium with special flags or using `python3 -m http.server`.
+Then write your progress JSON to the configured path; the dashboard polls every 5 seconds and re-renders.
+
+The reference dashboard:
+- Renders a sunburst chart of phases and items via D3 v7 (CDN, no build step)
+- Auto-refreshes from the JSON file
+- Supports tooltips, timeline, and current-activity display
+- Reads HTML/CSS from the skill directory but reads progress JSON from a configurable path so the skill directory stays free of run-specific state
+
+See `references/sample-viz/README.md` for the full progress JSON shape.
 
 4. Tell the user the URL — let them open it in whatever browser they prefer. Don't launch browsers programmatically; it's fiddly across different machines and window managers.
 5. Update the JSON every time you check on Codex — the browser auto-refreshes
